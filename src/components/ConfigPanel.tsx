@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { AppConfig, SpeechEngineConfig, SSMLConfig, EngineId, PromptVariable } from '../config'
+import { AppConfig, SpeechEngineConfig, SSMLConfig, EngineId, PromptVariable, VariableSyntaxConfig } from '../config'
 import {
   POLLY_REGIONS, POLLY_VOICES, POLLY_LANGUAGES, POLLY_ENGINE_TYPES,
   getVoicesFiltered, getEngineForVoice, PollyEngine,
@@ -704,6 +704,8 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
 
         {/* Prompt Variables */}
         <VariablesSection
+          syntax={config.variableSyntax}
+          onSyntaxChange={variableSyntax => onChange({ variableSyntax })}
           variables={config.variables ?? []}
           onChange={vars => onChange({ variables: vars })}
           dark={dark}
@@ -742,10 +744,14 @@ function makeVarId() {
 }
 
 function VariablesSection({
+  syntax,
+  onSyntaxChange,
   variables,
   onChange,
   dark,
 }: {
+  syntax: VariableSyntaxConfig
+  onSyntaxChange: (s: VariableSyntaxConfig) => void
   variables: PromptVariable[]
   onChange: (vars: PromptVariable[]) => void
   dark: boolean
@@ -870,86 +876,150 @@ function VariablesSection({
     </div>
   )
 
+  const SYNTAX_OPTIONS: { key: keyof VariableSyntaxConfig; label: string; example: string; description: string }[] = [
+    { key: 'dollar',      label: '$name',       example: '$policy_number',   description: 'Dollar sign prefix' },
+    { key: 'singleBrace', label: '{name}',      example: '{policy_number}',  description: 'Single curly braces' },
+    { key: 'doubleBrace', label: '{{name}}',    example: '{{policy_number}}', description: 'Double curly braces' },
+  ]
+
+  const atLeastOneActive = syntax.dollar || syntax.singleBrace || syntax.doubleBrace
+
+  const toggle = (key: keyof VariableSyntaxConfig) => {
+    const next = { ...syntax, [key]: !syntax[key] }
+    // Always keep at least one active
+    if (!next.dollar && !next.singleBrace && !next.doubleBrace) return
+    onSyntaxChange(next)
+  }
+
   return (
-    <div className={`rounded-lg border p-5 space-y-4 ${cardBg}`}>
+    <div className={`rounded-lg border p-5 space-y-5 ${cardBg}`}>
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h3 className={`text-sm font-semibold uppercase tracking-wide ${mutedCls}`}>Prompt Variables</h3>
-          <p className={`text-xs mt-0.5 ${mutedCls}`}>
-            Define <code className="font-mono">$variables</code> used in prompts — set descriptions and default values.
-          </p>
-        </div>
-        {!addingNew && (
-          <button
-            onClick={openAdd}
-            className={`text-xs px-3 py-1.5 rounded border font-medium transition-colors shrink-0 ${
-              dark ? 'border-indigo-500 text-indigo-300 hover:bg-indigo-900' : 'border-indigo-400 text-indigo-600 hover:bg-indigo-50'
-            }`}
-          >
-            + Add variable
-          </button>
+      <div>
+        <h3 className={`text-sm font-semibold uppercase tracking-wide ${mutedCls}`}>Prompt Variables</h3>
+        <p className={`text-xs mt-0.5 ${mutedCls}`}>
+          Choose which token syntax is recognised as a variable in your prompts. Matching tokens are highlighted in the editor and shown in the Variables panel for value assignment.
+        </p>
+      </div>
+
+      {/* Syntax options */}
+      <div className="space-y-2">
+        {SYNTAX_OPTIONS.map(opt => {
+          const active = syntax[opt.key]
+          return (
+            <button
+              key={opt.key}
+              onClick={() => toggle(opt.key)}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg border text-left transition-colors ${
+                active
+                  ? dark
+                    ? 'border-indigo-500 bg-indigo-900/30'
+                    : 'border-indigo-400 bg-indigo-50'
+                  : dark
+                    ? 'border-gray-700 bg-gray-700/30 opacity-60 hover:opacity-80'
+                    : 'border-gray-200 bg-gray-50 opacity-60 hover:opacity-80'
+              }`}
+            >
+              {/* Checkbox */}
+              <div className={`shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                active
+                  ? 'bg-indigo-600 border-indigo-600'
+                  : dark ? 'border-gray-500' : 'border-gray-300'
+              }`}>
+                {active && <span className="text-white text-xs leading-none">✓</span>}
+              </div>
+              {/* Label + example */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3">
+                  <code className={`text-sm font-mono font-semibold ${active ? (dark ? 'text-indigo-300' : 'text-indigo-600') : mutedCls}`}>
+                    {opt.label}
+                  </code>
+                  <span className={`text-xs ${mutedCls}`}>{opt.description}</span>
+                </div>
+                <p className={`text-xs mt-0.5 font-mono ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  e.g. <span className={active ? (dark ? 'text-blue-400' : 'text-blue-600') : ''}>{opt.example}</span>
+                </p>
+              </div>
+            </button>
+          )
+        })}
+        {!atLeastOneActive && (
+          <p className="text-xs text-red-500">At least one syntax must remain active.</p>
         )}
       </div>
 
-      {/* Empty state */}
-      {variables.length === 0 && !addingNew && (
-        <p className={`text-xs ${mutedCls}`}>
-          No variables defined yet. Add one to set descriptions and defaults that appear in the editor's Variables panel.
-        </p>
-      )}
-
-      {/* Variable rows */}
-      {variables.length > 0 && (
-        <div className="space-y-2">
-          {variables.map(v => (
-            <div key={v.id}>
-              {editingId === v.id ? (
-                <InlineForm onSave={() => saveEdit(v.id)} onCancel={cancelForm} id={v.id} />
-              ) : (
-                <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${rowBg}`}>
-                  <code className={`text-sm font-mono font-semibold shrink-0 ${dark ? 'text-indigo-300' : 'text-indigo-600'}`}>
-                    ${v.name}
-                  </code>
-                  <div className="flex-1 min-w-0 space-y-0.5">
-                    {v.description ? (
-                      <p className={`text-xs truncate ${mutedCls}`}>{v.description}</p>
-                    ) : null}
-                    {v.defaultValue ? (
-                      <p className={`text-xs ${mutedCls}`}>
-                        Default: <span className={`font-mono ${dark ? 'text-gray-300' : 'text-gray-700'}`}>{v.defaultValue}</span>
-                      </p>
-                    ) : null}
-                    {!v.description && !v.defaultValue && (
-                      <p className={`text-xs italic ${mutedCls}`}>No description or default value</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => openEdit(v)}
-                      className={`text-xs px-2 py-1 rounded transition-colors ${dark ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'}`}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => deleteVar(v.id)}
-                      className={`text-xs px-2 py-1 rounded transition-colors ${dark ? 'text-gray-500 hover:text-red-400 hover:bg-gray-600' : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'}`}
-                      title="Delete variable"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+      {/* Defined variables (descriptions + defaults) */}
+      <div className={`pt-4 border-t ${dark ? 'border-gray-700' : 'border-gray-200'} space-y-3`}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className={`text-sm font-medium ${dark ? 'text-gray-200' : 'text-gray-800'}`}>Defined variables</p>
+            <p className={`text-xs mt-0.5 ${mutedCls}`}>Set a description and default value for known variables — these appear as hints in the editor.</p>
+          </div>
+          {!addingNew && (
+            <button
+              onClick={openAdd}
+              className={`text-xs px-3 py-1.5 rounded border font-medium transition-colors shrink-0 ${
+                dark ? 'border-indigo-500 text-indigo-300 hover:bg-indigo-900' : 'border-indigo-400 text-indigo-600 hover:bg-indigo-50'
+              }`}
+            >
+              + Add
+            </button>
+          )}
         </div>
-      )}
 
-      {/* Add new variable form */}
-      {addingNew && (
-        <InlineForm onSave={saveNew} onCancel={cancelForm} />
-      )}
+        {variables.length === 0 && !addingNew && (
+          <p className={`text-xs ${mutedCls}`}>None defined. Optional — variables without definitions still work.</p>
+        )}
+
+        {variables.length > 0 && (
+          <div className="space-y-2">
+            {variables.map(v => (
+              <div key={v.id}>
+                {editingId === v.id ? (
+                  <InlineForm onSave={() => saveEdit(v.id)} onCancel={cancelForm} id={v.id} />
+                ) : (
+                  <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${rowBg}`}>
+                    <code className={`text-sm font-mono font-semibold shrink-0 ${dark ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                      {v.name}
+                    </code>
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      {v.description ? (
+                        <p className={`text-xs truncate ${mutedCls}`}>{v.description}</p>
+                      ) : null}
+                      {v.defaultValue ? (
+                        <p className={`text-xs ${mutedCls}`}>
+                          Default: <span className={`font-mono ${dark ? 'text-gray-300' : 'text-gray-700'}`}>{v.defaultValue}</span>
+                        </p>
+                      ) : null}
+                      {!v.description && !v.defaultValue && (
+                        <p className={`text-xs italic ${mutedCls}`}>No description or default</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => openEdit(v)}
+                        className={`text-xs px-2 py-1 rounded transition-colors ${dark ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'}`}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => deleteVar(v.id)}
+                        className={`text-xs px-2 py-1 rounded transition-colors ${dark ? 'text-gray-500 hover:text-red-400 hover:bg-gray-600' : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'}`}
+                        title="Delete"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {addingNew && (
+          <InlineForm onSave={saveNew} onCancel={cancelForm} />
+        )}
+      </div>
     </div>
   )
 }

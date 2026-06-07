@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { usePrompts } from './usePrompts'
 import { useSpeech } from './useSpeech'
-import { AppConfig, DEFAULT_CONFIG } from './config'
+import { AppConfig, DEFAULT_CONFIG, DEFAULT_VARIABLE_SYNTAX } from './config'
 import { synthesizeSpeech, synthesizeSpeechWav, POLLY_VOICES, getEngineForVoice } from './polly'
 import { computeDiff } from './diff'
 import Sidebar from './components/Sidebar'
@@ -28,6 +28,7 @@ function loadConfig(): AppConfig {
       },
       ssml: { ...DEFAULT_CONFIG.ssml, ...(saved.ssml ?? {}), favourites: saved.ssml?.favourites ?? [] },
       variables: saved.variables ?? DEFAULT_CONFIG.variables,
+      variableSyntax: { ...DEFAULT_VARIABLE_SYNTAX, ...(saved.variableSyntax ?? {}) },
     }
   } catch {
     return DEFAULT_CONFIG
@@ -73,11 +74,19 @@ export default function App() {
   const [editorVarValues, setEditorVarValues] = useState<Record<string, string>>({})
   const [editorVarSkipped, setEditorVarSkipped] = useState<Record<string, boolean>>({})
 
-  /** Apply $variable → assigned value substitution (honours skip switches) */
-  const applyEditorVars = (content: string): string =>
-    content.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, name) =>
-      (!editorVarSkipped[name] && editorVarValues[name]) ? editorVarValues[name] : match
-    )
+  /** Apply variable token substitution (honours active syntax + skip switches) */
+  const applyEditorVars = (content: string): string => {
+    const syn = config.variableSyntax
+    const parts: string[] = []
+    if (syn.dollar)      parts.push('\\$([a-zA-Z_][a-zA-Z0-9_]*)')
+    if (syn.doubleBrace) parts.push('\\{\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}\\}')
+    if (syn.singleBrace) parts.push('\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}')
+    if (parts.length === 0) return content
+    return content.replace(new RegExp(parts.join('|'), 'g'), (match, ...groups) => {
+      const name = groups.slice(0, parts.length).find((g: string | undefined) => g !== undefined) as string | undefined
+      return (name && !editorVarSkipped[name] && editorVarValues[name]) ? editorVarValues[name] : match
+    })
+  }
 
   const playPolly = async (text: string) => {
     const { accessKeyId, secretAccessKey, region, voiceId } = config.speechEngine.amazon
@@ -452,6 +461,7 @@ export default function App() {
               dark={dark}
               ssml={config.ssml}
               definedVariables={config.variables}
+              variableSyntax={config.variableSyntax}
             />
           </div>
           {pollyError && (

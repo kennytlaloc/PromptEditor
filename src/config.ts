@@ -32,6 +32,19 @@ export interface PromptVariable {
   defaultValue: string // pre-filled value in the editor panel
 }
 
+/** Which token syntax(es) are recognised as variables in prompt text */
+export interface VariableSyntaxConfig {
+  dollar: boolean       // $varName
+  singleBrace: boolean  // {varName}
+  doubleBrace: boolean  // {{varName}}
+}
+
+export const DEFAULT_VARIABLE_SYNTAX: VariableSyntaxConfig = {
+  dollar: true,
+  singleBrace: false,
+  doubleBrace: false,
+}
+
 export interface AppConfig {
   defaultVoice: string
   defaultRate: number
@@ -41,6 +54,7 @@ export interface AppConfig {
   speechEngine: SpeechEngineConfig
   ssml: SSMLConfig
   variables: PromptVariable[]
+  variableSyntax: VariableSyntaxConfig
 }
 
 const A = ALL_POLLY_ENGINES
@@ -150,4 +164,5 @@ export const DEFAULT_CONFIG: AppConfig = {
     favourites: [],
   },
   variables: [],
+  variableSyntax: DEFAULT_VARIABLE_SYNTAX,
 }

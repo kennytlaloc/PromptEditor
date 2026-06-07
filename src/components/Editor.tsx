@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Prompt, PromptVersion } from '../types'
-import { SSMLConfig, BUILT_IN_SSML_TAGS, SSMLSnippet, PromptVariable } from '../config'
+import { SSMLConfig, BUILT_IN_SSML_TAGS, SSMLSnippet, PromptVariable, VariableSyntaxConfig, DEFAULT_VARIABLE_SYNTAX } from '../config'
 
 interface Props {
   prompt: Prompt | null
@@ -11,6 +11,7 @@ interface Props {
   dark: boolean
   ssml: SSMLConfig
   definedVariables?: PromptVariable[]
+  variableSyntax?: VariableSyntaxConfig
 }
 
 interface EnclosingTag {
@@ -120,7 +121,7 @@ function applyTagToContent(
   }
 }
 
-export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent, onVarsChange, dark, ssml, definedVariables = [] }: Props) {
+export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent, onVarsChange, dark, ssml, definedVariables = [], variableSyntax = DEFAULT_VARIABLE_SYNTAX }: Props) {
   const [draftTitle, setDraftTitle] = useState('')
   const [draftContent, setDraftContent] = useState('')
   const [editingTitle, setEditingTitle] = useState(false)
@@ -302,19 +303,52 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
   const charCount = draftContent.length
   const tokenCount = Math.ceil(charCount / 4)
 
-  // Extract unique $variable tokens from the content
+  // Build a combined regex from the active syntax options
+  const varPatternParts: string[] = []
+  if (variableSyntax.dollar)      varPatternParts.push('\\$([a-zA-Z_][a-zA-Z0-9_]*)')
+  if (variableSyntax.doubleBrace) varPatternParts.push('\\{\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}\\}')
+  if (variableSyntax.singleBrace) varPatternParts.push('\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}')
+  // Note: doubleBrace must come before singleBrace so {{x}} doesn't partially match {x}
+  const VAR_REGEX = varPatternParts.length > 0 ? new RegExp(varPatternParts.join('|'), 'g') : null
+
+  /** Extract the capture group name from a regex match (first non-undefined group) */
+  const matchName = (m: RegExpExecArray): string =>
+    (m[1] ?? m[2] ?? m[3] ?? '').toString()
+
+  // Extract unique variable names from content
   const varNames: string[] = []
-  const varRegex = /\$([a-zA-Z_][a-zA-Z0-9_]*)/g
-  let varMatch: RegExpExecArray | null
-  while ((varMatch = varRegex.exec(draftContent)) !== null) {
-    if (!varNames.includes(varMatch[1])) varNames.push(varMatch[1])
+  if (VAR_REGEX) {
+    let varMatch: RegExpExecArray | null
+    while ((varMatch = VAR_REGEX.exec(draftContent)) !== null) {
+      const name = matchName(varMatch)
+      if (name && !varNames.includes(name)) varNames.push(name)
+    }
   }
 
-  /** Replace $var tokens with assigned values, unless the variable is skipped */
-  const applyVars = (content: string): string =>
-    content.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, name) =>
-      (!varSkipped[name] && varValues[name]) ? varValues[name] : match
-    )
+  /** Replace variable tokens with assigned values, unless skipped */
+  const applyVars = (content: string): string => {
+    if (!VAR_REGEX) return content
+    return content.replace(new RegExp(VAR_REGEX.source, 'g'), (match, ...groups) => {
+      const name = groups.slice(0, varPatternParts.length).find((g: string | undefined) => g !== undefined) as string | undefined
+      return (name && !varSkipped[name] && varValues[name]) ? varValues[name] : match
+    })
+  }
+
+  /** Split content into alternating plain/variable parts for the highlight backdrop */
+  const splitForHighlight = (content: string): { text: string; isVar: boolean }[] => {
+    if (!VAR_REGEX) return [{ text: content, isVar: false }]
+    const parts: { text: string; isVar: boolean }[] = []
+    let last = 0
+    const re = new RegExp(VAR_REGEX.source, 'g')
+    let m: RegExpExecArray | null
+    while ((m = re.exec(content)) !== null) {
+      if (m.index > last) parts.push({ text: content.slice(last, m.index), isVar: false })
+      parts.push({ text: m[0], isVar: true })
+      last = m.index + m[0].length
+    }
+    if (last < content.length) parts.push({ text: content.slice(last), isVar: false })
+    return parts
+  }
 
   return (
     <div className={`flex-1 flex flex-col ${bg} overflow-hidden relative`}>
@@ -384,10 +418,10 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
           className={`absolute inset-0 p-4 text-sm leading-relaxed font-mono whitespace-pre-wrap break-words overflow-hidden pointer-events-none select-none ${areaCls}`}
           style={{ wordBreak: 'break-word' }}
         >
-          {draftContent.split(/(\$[a-zA-Z_][a-zA-Z0-9_]*)/g).map((part, i) =>
-            /^\$[a-zA-Z_][a-zA-Z0-9_]*$/.test(part)
-              ? <mark key={i} className={`bg-transparent font-semibold ${dark ? 'text-blue-400' : 'text-blue-600'}`}>{part}</mark>
-              : <span key={i}>{part}</span>
+          {splitForHighlight(draftContent).map((part, i) =>
+            part.isVar
+              ? <mark key={i} className={`bg-transparent font-semibold ${dark ? 'text-blue-400' : 'text-blue-600'}`}>{part.text}</mark>
+              : <span key={i}>{part.text}</span>
           )}
           {/* Trailing newline keeps backdrop height in sync when content ends with \n */}
           {'\n'}
@@ -489,9 +523,7 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
                 <div className={`mt-2 pt-2 border-t ${borderCls}`}>
                   <p className={`text-xs font-medium mb-1 ${mutedCls}`}>Preview with values:</p>
                   <p className={`text-xs font-mono leading-relaxed break-words ${dark ? 'text-gray-300' : 'text-gray-700'}`}>
-                    {draftContent.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, n) =>
-                      (varValues[n] && !varSkipped[n]) ? `[${varValues[n]}]` : `$${n}`
-                    )}
+                    {applyVars(draftContent)}
                   </p>
                 </div>
               )}
