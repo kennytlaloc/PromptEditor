@@ -711,9 +711,9 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
 
         {/* About */}
         <Section title="About">
-          <Row label="PromptEditor" hint="Version 1.0.1">
+          <Row label="PromptEditor" hint={`Version ${__APP_VERSION__}`}>
             <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${dark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>
-              v1.0.1
+              v{__APP_VERSION__}
             </span>
           </Row>
           <Row label="Storage" hint="All data stored locally in your browser">
