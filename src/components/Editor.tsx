@@ -386,7 +386,7 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
         >
           {draftContent.split(/(\$[a-zA-Z_][a-zA-Z0-9_]*)/g).map((part, i) =>
             /^\$[a-zA-Z_][a-zA-Z0-9_]*$/.test(part)
-              ? <mark key={i} className={`bg-transparent font-semibold underline underline-offset-2 decoration-blue-500 ${dark ? 'text-blue-400' : 'text-blue-600'}`}>{part}</mark>
+              ? <mark key={i} className={`bg-transparent font-semibold ${dark ? 'text-blue-400' : 'text-blue-600'}`}>{part}</mark>
               : <span key={i}>{part}</span>
           )}
           {/* Trailing newline keeps backdrop height in sync when content ends with \n */}
