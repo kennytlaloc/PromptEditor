@@ -370,16 +370,37 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
         </div>
       )}
 
-      {/* Textarea */}
-      <textarea
-        ref={textareaRef}
-        className={`flex-1 w-full p-4 text-sm leading-relaxed resize-none focus:outline-none border-0 font-mono ${areaCls}`}
-        value={draftContent}
-        onChange={e => setDraftContent(e.target.value)}
-        onContextMenu={handleContextMenu}
-        placeholder="Enter your prompt here…"
-        spellCheck
-      />
+      {/* Textarea with variable highlight overlay */}
+      <div className="relative flex-1 flex flex-col overflow-hidden">
+        {/* Backdrop: mirrors textarea content with $variable tokens highlighted */}
+        <div
+          aria-hidden="true"
+          className={`absolute inset-0 p-4 text-sm leading-relaxed font-mono whitespace-pre-wrap break-words overflow-hidden pointer-events-none select-none ${areaCls}`}
+          style={{ wordBreak: 'break-word' }}
+        >
+          {draftContent.split(/(\$[a-zA-Z_][a-zA-Z0-9_]*)/g).map((part, i) =>
+            /^\$[a-zA-Z_][a-zA-Z0-9_]*$/.test(part)
+              ? <mark key={i} className={`bg-transparent font-semibold underline underline-offset-2 decoration-blue-500 ${dark ? 'text-blue-400' : 'text-blue-600'}`}>{part}</mark>
+              : <span key={i}>{part}</span>
+          )}
+          {/* Trailing newline keeps backdrop height in sync when content ends with \n */}
+          {'\n'}
+        </div>
+        <textarea
+          ref={textareaRef}
+          className={`relative flex-1 w-full p-4 text-sm leading-relaxed resize-none focus:outline-none border-0 font-mono bg-transparent caret-current`}
+          style={{ color: 'transparent', caretColor: dark ? '#f3f4f6' : '#111827' }}
+          value={draftContent}
+          onChange={e => setDraftContent(e.target.value)}
+          onContextMenu={handleContextMenu}
+          onScroll={e => {
+            const backdrop = (e.currentTarget as HTMLTextAreaElement).previousElementSibling as HTMLDivElement | null
+            if (backdrop) backdrop.scrollTop = (e.currentTarget as HTMLTextAreaElement).scrollTop
+          }}
+          placeholder="Enter your prompt here…"
+          spellCheck
+        />
+      </div>
 
       {/* Playback highlight bar */}
       {activeSentence >= 0 && (
@@ -438,7 +459,7 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
                         <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${skipped ? 'translate-x-0.5' : 'translate-x-3.5'}`} />
                       </button>
                       <label className={`text-xs font-mono shrink-0 font-medium ${skipped ? mutedCls : dark ? 'text-indigo-300' : 'text-indigo-600'}`}>
-                        ${name}
+                        {name}
                       </label>
                       <input
                         type="text"
