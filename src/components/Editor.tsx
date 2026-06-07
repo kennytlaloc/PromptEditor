@@ -240,9 +240,14 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
     setEditingTitle(false)
   }
 
-  // All tags: custom snippets first, then built-ins
+  const favourites = ssml.favourites ?? []
+  // Favourites float to the top; within each group preserve original order
+  const sortByFav = (tags: SSMLSnippet[]) => [
+    ...tags.filter(t => favourites.includes(t.id)),
+    ...tags.filter(t => !favourites.includes(t.id)),
+  ]
   // Filter by mode: no selection → self-closing only; selection → wrapping only
-  const allTags: SSMLSnippet[] = [...ssml.snippets, ...BUILT_IN_SSML_TAGS]
+  const allTags: SSMLSnippet[] = sortByFav([...ssml.snippets, ...BUILT_IN_SSML_TAGS])
   const modeFilteredTags = contextMenu
     ? allTags.filter(t => contextMenu.hasSelection ? isWrapping(t.tag) : !isWrapping(t.tag))
     : allTags
@@ -568,20 +573,20 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
               const builtInItems = filteredTags.filter(t => !ssml.snippets.some(s => s.id === t.id))
               return (
                 <>
-                  {customItems.map(tag => <TagRow key={tag.id} tag={tag} onApply={applyTag} dark={dark} menuItemHover={menuItemHover} codeCls={codeCls} textCls={textCls} mutedCls={mutedCls} />)}
+                  {customItems.map(tag => <TagRow key={tag.id} tag={tag} onApply={applyTag} dark={dark} menuItemHover={menuItemHover} codeCls={codeCls} textCls={textCls} mutedCls={mutedCls} isFav={favourites.includes(tag.id)} />)}
                   {builtInItems.length > 0 && (
                     <div className={`px-3 py-1 text-xs font-semibold uppercase tracking-wide ${mutedCls} ${dark ? 'bg-gray-900' : 'bg-gray-50'}`}>
                       Built-in
                     </div>
                   )}
-                  {builtInItems.map(tag => <TagRow key={tag.id} tag={tag} onApply={applyTag} dark={dark} menuItemHover={menuItemHover} codeCls={codeCls} textCls={textCls} mutedCls={mutedCls} />)}
+                  {builtInItems.map(tag => <TagRow key={tag.id} tag={tag} onApply={applyTag} dark={dark} menuItemHover={menuItemHover} codeCls={codeCls} textCls={textCls} mutedCls={mutedCls} isFav={favourites.includes(tag.id)} />)}
                 </>
               )
             })()}
 
             {/* When searching or no custom snippets, flat list */}
             {(tagSearch || ssml.snippets.length === 0) && filteredTags.map(tag => (
-              <TagRow key={tag.id} tag={tag} onApply={applyTag} dark={dark} menuItemHover={menuItemHover} codeCls={codeCls} textCls={textCls} mutedCls={mutedCls} />
+              <TagRow key={tag.id} tag={tag} onApply={applyTag} dark={dark} menuItemHover={menuItemHover} codeCls={codeCls} textCls={textCls} mutedCls={mutedCls} isFav={favourites.includes(tag.id)} />
             ))}
           </div>
         </div>
@@ -590,7 +595,7 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
   )
 }
 
-function TagRow({ tag, onApply, dark, menuItemHover, codeCls, textCls, mutedCls }: {
+function TagRow({ tag, onApply, dark, menuItemHover, codeCls, textCls, mutedCls, isFav }: {
   tag: SSMLSnippet
   onApply: (tag: string) => void
   dark: boolean
@@ -598,6 +603,7 @@ function TagRow({ tag, onApply, dark, menuItemHover, codeCls, textCls, mutedCls 
   codeCls: string
   textCls: string
   mutedCls: string
+  isFav?: boolean
 }) {
   return (
     <button
@@ -605,6 +611,7 @@ function TagRow({ tag, onApply, dark, menuItemHover, codeCls, textCls, mutedCls 
       onClick={() => onApply(tag.tag)}
       className={`w-full text-left px-3 py-2 flex items-start gap-2 transition-colors ${menuItemHover}`}
     >
+      {isFav && <span className="text-yellow-400 shrink-0 text-xs mt-0.5">★</span>}
       <div className="flex-1 min-w-0">
         <p className={`text-xs font-medium ${textCls}`}>{tag.label}</p>
         {tag.description && <p className={`text-xs ${mutedCls} truncate`}>{tag.description}</p>}

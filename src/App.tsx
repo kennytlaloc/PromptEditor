@@ -22,11 +22,11 @@ function loadConfig(): AppConfig {
         ...DEFAULT_CONFIG.speechEngine,
         ...(saved.speechEngine ?? {}),
         enabledEngines: saved.speechEngine?.enabledEngines ?? DEFAULT_CONFIG.speechEngine.enabledEngines,
-        amazon: { ...DEFAULT_CONFIG.speechEngine.amazon, ...(saved.speechEngine?.amazon ?? {}) },
+        amazon: { ...DEFAULT_CONFIG.speechEngine.amazon, ...(saved.speechEngine?.amazon ?? {}), language: saved.speechEngine?.amazon?.language ?? DEFAULT_CONFIG.speechEngine.amazon.language, engineType: saved.speechEngine?.amazon?.engineType ?? DEFAULT_CONFIG.speechEngine.amazon.engineType },
         google: { ...DEFAULT_CONFIG.speechEngine.google, ...(saved.speechEngine?.google ?? {}) },
         elevenlabs: { ...DEFAULT_CONFIG.speechEngine.elevenlabs, ...(saved.speechEngine?.elevenlabs ?? {}) },
       },
-      ssml: { ...DEFAULT_CONFIG.ssml, ...(saved.ssml ?? {}) },
+      ssml: { ...DEFAULT_CONFIG.ssml, ...(saved.ssml ?? {}), favourites: saved.ssml?.favourites ?? [] },
     }
   } catch {
     return DEFAULT_CONFIG
@@ -47,9 +47,11 @@ export default function App() {
     return stored[0]?.id ?? null
   })
   const [showImport, setShowImport] = useState(false)
-  const [checkedIds, setCheckedIds] = useState<Set<string>>(() =>
-    new Set(JSON.parse(localStorage.getItem('prompt-editor-prompts') || '[]').slice(0, 1).map((p: any) => p.id))
-  )
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(() => {
+    const stored: any[] = JSON.parse(localStorage.getItem('prompt-editor-prompts') || '[]')
+    const firstId = stored[0]?.id
+    return firstId ? new Set([firstId]) : new Set()
+  })
 
   // Polly playback state
   const pollyAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -153,7 +155,11 @@ export default function App() {
     return `<speak>${trimmed}</speak>`
   }
 
-  const handleSelect = (id: string) => { speech.stop(); setSelectedId(id) }
+  const handleSelect = (id: string) => {
+    speech.stop()
+    setSelectedId(id)
+    setCheckedIds(prev => { const next = new Set(prev); next.add(id); return next })
+  }
 
   const handleDelete = (id: string) => {
     deletePrompt(id)
@@ -320,12 +326,11 @@ export default function App() {
             engineDetails={(() => {
               const eng = config.speechEngine.engine
               if (eng === 'amazon') {
-                const { region, voiceId } = config.speechEngine.amazon
+                const { region, voiceId, language, engineType } = config.speechEngine.amazon
                 const voice = POLLY_VOICES.find(v => v.id === voiceId)
-                const engineType = voice ? getEngineForVoice(voice, region) : undefined
                 return {
                   region,
-                  language: voice?.language,
+                  language,
                   engineType: engineType ? engineType.charAt(0).toUpperCase() + engineType.slice(1) : undefined,
                   voice: voice ? `${voice.name} (${voice.gender === 'Female' ? '♀' : '♂'})` : voiceId,
                 }

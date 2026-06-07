@@ -4,6 +4,7 @@ import {
   POLLY_REGIONS, POLLY_VOICES, POLLY_LANGUAGES, POLLY_ENGINE_TYPES,
   getVoicesFiltered, getEngineForVoice, PollyEngine,
 } from '../polly'
+
 import SSMLSection from './SSMLSection'
 
 interface Props {
@@ -88,6 +89,7 @@ function PlainInput({
 
 export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
   const [amazonCredMode, setAmazonCredMode] = React.useState<'manual' | 'upload'>('manual')
+  const [credExpanded, setCredExpanded] = React.useState(false)
   const [csvError, setCsvError] = React.useState<string | null>(null)
   const [csvSuccess, setCsvSuccess] = React.useState(false)
 
@@ -114,9 +116,11 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
     setAmazonDirty(false)
   }
 
-  // Voice filter state
-  const [voiceLang, setVoiceLang] = React.useState('English (US)')
-  const [voiceEngine, setVoiceEngine] = React.useState<PollyEngine>('neural')
+  // Voice filter state — kept in draft so Save/Cancel apply to them too
+  const voiceLang   = amazonDraft.language   ?? 'English (US)'
+  const voiceEngine = (amazonDraft.engineType ?? 'neural') as PollyEngine
+  const setVoiceLang   = (v: string)       => patchDraft({ language: v })
+  const setVoiceEngine = (v: PollyEngine)  => patchDraft({ engineType: v })
 
   const handleCredentialsCsv = (file: File) => {
     setCsvError(null)
@@ -333,72 +337,109 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
 
           {/* Amazon Polly */}
           {activeEngine === 'amazon' && (
-            <div className="space-y-3">
-              {/* Credential mode toggle */}
-              <div className={`flex rounded-lg border overflow-hidden text-xs font-medium ${dark ? 'border-gray-600' : 'border-gray-200'}`}>
-                {(['manual', 'upload'] as const).map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => { setAmazonCredMode(mode); setCsvError(null); setCsvSuccess(false) }}
-                    className={`flex-1 py-1.5 transition-colors ${
-                      amazonCredMode === mode
-                        ? 'bg-indigo-600 text-white'
-                        : dark ? 'bg-gray-800 text-gray-400 hover:text-gray-200' : 'bg-white text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    {mode === 'manual' ? 'Manual entry' : 'Upload CSV'}
-                  </button>
-                ))}
+            <div className="space-y-4">
+
+              {/* ── Credentials ─────────────────────────────────────────────── */}
+              <div className={`rounded-lg border ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
+                {/* Collapsible header */}
+                <button
+                  type="button"
+                  onClick={() => setCredExpanded(e => !e)}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-left transition-colors rounded-lg ${
+                    dark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${mutedCls}`}>Credentials</span>
+                    {amazonDraft.accessKeyId && !credExpanded && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${dark ? 'bg-green-900 text-green-300' : 'bg-green-50 text-green-700'}`}>
+                        ✓ configured
+                      </span>
+                    )}
+                    {!amazonDraft.accessKeyId && !credExpanded && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${dark ? 'bg-yellow-900 text-yellow-300' : 'bg-yellow-50 text-yellow-700'}`}>
+                        not set
+                      </span>
+                    )}
+                  </div>
+                  <span className={`text-xs ${mutedCls}`}>{credExpanded ? '▲' : '▼'}</span>
+                </button>
+
+                {credExpanded && (
+                  <div className={`px-3 pb-3 space-y-3 border-t ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div className="pt-3" />
+                    {/* Credential mode toggle */}
+                    <div className={`flex rounded-lg border overflow-hidden text-xs font-medium ${dark ? 'border-gray-600' : 'border-gray-200'}`}>
+                      {(['manual', 'upload'] as const).map(mode => (
+                        <button
+                          key={mode}
+                          onClick={() => { setAmazonCredMode(mode); setCsvError(null); setCsvSuccess(false) }}
+                          className={`flex-1 py-1.5 transition-colors ${
+                            amazonCredMode === mode
+                              ? 'bg-indigo-600 text-white'
+                              : dark ? 'bg-gray-800 text-gray-400 hover:text-gray-200' : 'bg-white text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          {mode === 'manual' ? 'Manual entry' : 'Upload CSV'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {amazonCredMode === 'upload' ? (
+                      <div>
+                        <label
+                          className={`flex flex-col items-center justify-center gap-2 w-full rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors ${
+                            dark ? 'border-gray-600 hover:border-indigo-500 text-gray-400' : 'border-gray-300 hover:border-indigo-400 text-gray-500'
+                          }`}
+                        >
+                          <span className="text-2xl">📄</span>
+                          <span className="text-xs text-center">
+                            Drop your <strong>credentials.csv</strong> here or click to browse
+                          </span>
+                          <span className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                            AWS IAM → Users → Security credentials → Create access key → Download .csv
+                          </span>
+                          <input
+                            type="file"
+                            accept=".csv,text/csv"
+                            className="sr-only"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handleCredentialsCsv(f) }}
+                          />
+                        </label>
+                        {csvError && (
+                          <p className="mt-2 text-xs text-red-500">{csvError}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        {csvSuccess && (
+                          <p className={`text-xs px-3 py-2 rounded-lg ${dark ? 'bg-green-900 text-green-300' : 'bg-green-50 text-green-700'}`}>
+                            ✓ Credentials loaded from CSV file.
+                          </p>
+                        )}
+                        <MaskedInput
+                          label="Access Key ID"
+                          value={amazonDraft.accessKeyId}
+                          onChange={v => patchDraft({ accessKeyId: v })}
+                          placeholder="AKIAIOSFODNN7EXAMPLE"
+                          dark={dark}
+                        />
+                        <MaskedInput
+                          label="Secret Access Key"
+                          value={amazonDraft.secretAccessKey}
+                          onChange={v => patchDraft({ secretAccessKey: v })}
+                          placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                          dark={dark}
+                        />
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {amazonCredMode === 'upload' ? (
-                <div>
-                  <label
-                    className={`flex flex-col items-center justify-center gap-2 w-full rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors ${
-                      dark ? 'border-gray-600 hover:border-indigo-500 text-gray-400' : 'border-gray-300 hover:border-indigo-400 text-gray-500'
-                    }`}
-                  >
-                    <span className="text-2xl">📄</span>
-                    <span className="text-xs text-center">
-                      Drop your <strong>credentials.csv</strong> here or click to browse
-                    </span>
-                    <span className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
-                      AWS IAM → Users → Security credentials → Create access key → Download .csv
-                    </span>
-                    <input
-                      type="file"
-                      accept=".csv,text/csv"
-                      className="sr-only"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleCredentialsCsv(f) }}
-                    />
-                  </label>
-                  {csvError && (
-                    <p className="mt-2 text-xs text-red-500">{csvError}</p>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {csvSuccess && (
-                    <p className={`text-xs px-3 py-2 rounded-lg ${dark ? 'bg-green-900 text-green-300' : 'bg-green-50 text-green-700'}`}>
-                      ✓ Credentials loaded from CSV file.
-                    </p>
-                  )}
-                  <MaskedInput
-                    label="Access Key ID"
-                    value={amazonDraft.accessKeyId}
-                    onChange={v => patchDraft({ accessKeyId: v })}
-                    placeholder="AKIAIOSFODNN7EXAMPLE"
-                    dark={dark}
-                  />
-                  <MaskedInput
-                    label="Secret Access Key"
-                    value={amazonDraft.secretAccessKey}
-                    onChange={v => patchDraft({ secretAccessKey: v })}
-                    placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-                    dark={dark}
-                  />
-                </>
-              )}
+              {/* ── Voice Settings ───────────────────────────────────────────── */}
+              <div className={`pt-3 border-t space-y-3 ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
+                <p className={`text-xs font-semibold uppercase tracking-wide ${mutedCls}`}>Voice Settings</p>
 
               {/* Region dropdown */}
               <div>
@@ -427,17 +468,20 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
                   value={voiceLang}
                   onChange={e => {
                     const lang = e.target.value
-                    setVoiceLang(lang)
-                    // Keep current engine type if it has voices, otherwise fall back to first available
                     let eng = voiceEngine
                     if (getVoicesFiltered(amazonDraft.region, lang, eng).length === 0) {
                       const fallback = POLLY_ENGINE_TYPES.find(et =>
                         getVoicesFiltered(amazonDraft.region, lang, et.id).length > 0
                       )
-                      if (fallback) { eng = fallback.id; setVoiceEngine(eng) }
+                      if (fallback) eng = fallback.id
                     }
                     const available = getVoicesFiltered(amazonDraft.region, lang, eng)
-                    if (available.length > 0) patchDraft({ voiceId: available[0].id })
+                    const keepCurrent = available.some(v => v.id === amazonDraft.voiceId)
+                    patchDraft({
+                      language: lang,
+                      engineType: eng,
+                      ...(keepCurrent ? {} : { voiceId: available[0]?.id ?? '' }),
+                    })
                   }}
                 >
                   {POLLY_LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
@@ -452,9 +496,12 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
                   value={voiceEngine}
                   onChange={e => {
                     const eng = e.target.value as PollyEngine
-                    setVoiceEngine(eng)
                     const available = getVoicesFiltered(amazonDraft.region, voiceLang, eng)
-                    if (available.length > 0) patchDraft({ voiceId: available[0].id })
+                    const keepCurrent = available.some(v => v.id === amazonDraft.voiceId)
+                    patchDraft({
+                      engineType: eng,
+                      ...(keepCurrent ? {} : { voiceId: available[0]?.id ?? '' }),
+                    })
                   }}
                 >
                   {POLLY_ENGINE_TYPES.filter(et =>
@@ -501,6 +548,8 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
                   )
                 })()}
               </div>
+
+              </div>{/* end Voice Settings */}
 
               {/* Save / Cancel */}
               <div className={`flex items-center justify-between pt-1 border-t ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -655,9 +704,9 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
 
         {/* About */}
         <Section title="About">
-          <Row label="PromptEditor" hint="Version 1.0.0">
+          <Row label="PromptEditor" hint="Version 1.0.1">
             <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${dark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>
-              v1.0.0
+              v1.0.1
             </span>
           </Row>
           <Row label="Storage" hint="All data stored locally in your browser">
