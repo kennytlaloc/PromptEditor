@@ -16,11 +16,13 @@ export default function Sidebar({ prompts, selectedId, onSelect, onDelete, dark,
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<'name' | 'date'>('date')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false)
 
   const filtered = prompts
     .filter(p =>
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.content.toLowerCase().includes(search.toLowerCase())
+      (p.title.toLowerCase().includes(search.toLowerCase()) ||
+       p.content.toLowerCase().includes(search.toLowerCase())) &&
+      (!showSelectedOnly || checkedIds.has(p.id))
     )
     .sort((a, b) =>
       sort === 'name'
@@ -79,15 +81,28 @@ export default function Sidebar({ prompts, selectedId, onSelect, onDelete, dark,
           onChange={e => onToggleAll(filteredIds, e.target.checked)}
           className="accent-indigo-600 cursor-pointer"
         />
-        <span>
+        <span className="flex-1">
           {checkedIds.size === 0 ? 'Select all' : `${checkedIds.size} selected`}
         </span>
+        <label className={`flex items-center gap-1 cursor-pointer font-normal ml-auto ${
+          showSelectedOnly
+            ? dark ? 'text-indigo-400' : 'text-indigo-600'
+            : mutedCls
+        }`}>
+          <input
+            type="checkbox"
+            checked={showSelectedOnly}
+            onChange={e => setShowSelectedOnly(e.target.checked)}
+            className="accent-indigo-600 cursor-pointer"
+          />
+          Show selected
+        </label>
       </div>
 
       <ul className="flex-1 overflow-y-auto py-1">
         {filtered.length === 0 && (
           <li className={`px-3 py-4 text-sm text-center ${mutedCls}`}>
-            {search ? 'No matches' : 'No prompts yet'}
+            {showSelectedOnly ? 'No selected prompts' : search ? 'No matches' : 'No prompts yet'}
           </li>
         )}
         {filtered.map(p => (

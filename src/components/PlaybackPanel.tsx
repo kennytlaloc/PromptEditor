@@ -27,6 +27,11 @@ interface Props {
   onGoToSettings: () => void
   onDownload?: () => void
   downloadState?: 'idle' | 'loading'
+  tabCount?: number
+  onPlayAll?: () => void
+  onStopAll?: () => void
+  playAllState?: 'idle' | 'playing'
+  playAllIndex?: number   // 0-based index of the currently playing tab
 }
 
 const ENGINE_VOICE_LABELS: Record<EngineId, string> = {
@@ -41,6 +46,7 @@ export default function PlaybackPanel({
   playState, onPlay, onPause, onResume, onStop,
   hasContent, dark, activeEngine, activeEngineVoiceLabel, engineDetails, onGoToSettings,
   onDownload, downloadState = 'idle',
+  tabCount = 1, onPlayAll, onStopAll, playAllState = 'idle', playAllIndex,
 }: Props) {
   const bg = dark ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200'
   const textCls = dark ? 'text-gray-100' : 'text-gray-900'
@@ -109,6 +115,46 @@ export default function PlaybackPanel({
           }`}>
             {playState === 'playing' ? '● Playing…' : '⏸ Paused'}
           </p>
+        )}
+
+        {/* Play All — shown only when multiple tabs are open */}
+        {tabCount > 1 && (
+          <div className={`mt-3 pt-3 border-t ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
+            {playAllState === 'idle' ? (
+              <button
+                disabled={playState !== 'idle'}
+                onClick={onPlayAll}
+                className={`w-full flex items-center justify-center gap-1.5 text-xs py-1.5 rounded border font-medium transition-colors disabled:opacity-40 ${
+                  dark
+                    ? 'border-indigo-500 text-indigo-300 hover:bg-indigo-900 disabled:hover:bg-transparent'
+                    : 'border-indigo-400 text-indigo-600 hover:bg-indigo-50 disabled:hover:bg-transparent'
+                }`}
+              >
+                ▶▶ Play all ({tabCount})
+              </button>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-indigo-500 font-medium">
+                    ● Playing {playAllIndex !== undefined ? playAllIndex + 1 : '?'} of {tabCount}
+                  </span>
+                  <button
+                    onClick={onStopAll}
+                    className="text-xs px-2 py-0.5 rounded bg-red-500 hover:bg-red-600 text-white font-medium"
+                  >
+                    ■ Stop
+                  </button>
+                </div>
+                {/* Progress bar */}
+                <div className={`w-full h-1 rounded-full ${dark ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                  <div
+                    className="h-1 rounded-full bg-indigo-500 transition-all duration-300"
+                    style={{ width: `${((((playAllIndex ?? 0) + 1) / tabCount) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Download WAV */}
