@@ -52,12 +52,31 @@ export default function App() {
     const firstId = stored[0]?.id
     return firstId ? new Set([firstId]) : new Set()
   })
+  // Tab order tracks the display order of checked prompt tabs
+  const [tabOrder, setTabOrder] = useState<string[]>(() => {
+    const stored: any[] = JSON.parse(localStorage.getItem('prompt-editor-prompts') || '[]')
+    return stored[0]?.id ? [stored[0].id] : []
+  })
+  const dragTabRef = useRef<string | null>(null)
 
   // Polly playback state
   const pollyAudioRef = useRef<HTMLAudioElement | null>(null)
   const [pollyPlayState, setPollyPlayState] = useState<'idle' | 'playing' | 'paused'>('idle')
   const [pollyError, setPollyError] = useState<string | null>(null)
   const [downloadState, setDownloadState] = useState<'idle' | 'loading'>('idle')
+  const [playAllState, setPlayAllState] = useState<'idle' | 'playing'>('idle')
+  const [playAllIndex, setPlayAllIndex] = useState<number>(0)
+  const stopAllRef = useRef(false)
+
+  // Variable substitutions set by the Editor's Variables panel
+  const [editorVarValues, setEditorVarValues] = useState<Record<string, string>>({})
+  const [editorVarSkipped, setEditorVarSkipped] = useState<Record<string, boolean>>({})
+
+  /** Apply $variable → assigned value substitution (honours skip switches) */
+  const applyEditorVars = (content: string): string =>
+    content.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, name) =>
+      (!editorVarSkipped[name] && editorVarValues[name]) ? editorVarValues[name] : match
+    )
 
   const playPolly = async (text: string) => {
     const { accessKeyId, secretAccessKey, region, voiceId } = config.speechEngine.amazon
@@ -111,7 +130,7 @@ export default function App() {
     try {
       const voice = POLLY_VOICES.find(v => v.id === voiceId)
       const engine = voice ? getEngineForVoice(voice, region) : 'standard'
-      const text = getPlaybackContent(selectedPrompt.content, 'amazon')
+      const text = getPlaybackContent(applyEditorVars(selectedPrompt.content), 'amazon')
       const wavBuffer = await synthesizeSpeechWav({ text, voiceId, engine, region, accessKeyId, secretAccessKey })
       const blob = new Blob([wavBuffer], { type: 'audio/wav' })
       const url = URL.createObjectURL(blob)
@@ -125,6 +144,67 @@ export default function App() {
     } finally {
       setDownloadState('idle')
     }
+  }
+
+  const playAll = async () => {
+    const orderedIds = tabOrder.filter(id => checkedIds.has(id))
+    const orderedPrompts = orderedIds.map(id => prompts.find(p => p.id === id)).filter(Boolean) as typeof prompts
+    if (orderedPrompts.length < 2) return
+
+    stopAllRef.current = false
+    setPlayAllState('playing')
+    setPollyError(null)
+
+    for (let i = 0; i < orderedPrompts.length; i++) {
+      if (stopAllRef.current) break
+      const p = orderedPrompts[i]
+      setSelectedId(p.id)
+      setPlayAllIndex(i)
+
+      const engine = config.speechEngine.engine
+      const content = getPlaybackContent(applyEditorVars(p.content), engine)
+
+      await new Promise<void>(resolve => {
+        if (engine === 'amazon') {
+          const { accessKeyId, secretAccessKey, region, voiceId } = config.speechEngine.amazon
+          if (!accessKeyId || !secretAccessKey) { resolve(); return }
+          const voice = POLLY_VOICES.find(v => v.id === voiceId)
+          const engineType = voice ? getEngineForVoice(voice, region) : 'standard'
+          setPollyPlayState('playing')
+          synthesizeSpeech({ text: content, voiceId, engine: engineType, region, accessKeyId, secretAccessKey })
+            .then(buf => {
+              if (stopAllRef.current) { resolve(); return }
+              const blob = new Blob([buf], { type: 'audio/mpeg' })
+              const url = URL.createObjectURL(blob)
+              const audio = new Audio(url)
+              pollyAudioRef.current = audio
+              audio.onended = () => { setPollyPlayState('idle'); URL.revokeObjectURL(url); resolve() }
+              audio.onerror = () => { setPollyPlayState('idle'); URL.revokeObjectURL(url); resolve() }
+              audio.play()
+            })
+            .catch(() => { setPollyPlayState('idle'); resolve() })
+        } else {
+          speech.play(content)
+          // Browser TTS: estimate completion or wait briefly, then move on
+          const words = content.split(/\s+/).length
+          const ms = Math.max(1500, words * 400)
+          setTimeout(resolve, ms)
+        }
+      })
+
+      if (stopAllRef.current) break
+    }
+
+    setPlayAllState('idle')
+    setPollyPlayState('idle')
+  }
+
+  const stopAll = () => {
+    stopAllRef.current = true
+    if (pollyAudioRef.current) { pollyAudioRef.current.pause(); pollyAudioRef.current = null }
+    speech.stop()
+    setPollyPlayState('idle')
+    setPlayAllState('idle')
   }
 
   useEffect(() => {
@@ -159,6 +239,7 @@ export default function App() {
     speech.stop()
     setSelectedId(id)
     setCheckedIds(prev => { const next = new Set(prev); next.add(id); return next })
+    setTabOrder(o => o.includes(id) ? o : [...o, id])
   }
 
   const handleDelete = (id: string) => {
@@ -268,30 +349,109 @@ export default function App() {
             prompts={prompts} selectedId={selectedId}
             onSelect={handleSelect} onDelete={handleDelete} dark={dark}
             checkedIds={checkedIds}
-            onToggleChecked={id => setCheckedIds(prev => {
-              const next = new Set(prev)
-              next.has(id) ? next.delete(id) : next.add(id)
-              return next
-            })}
-            onToggleAll={(ids, checked) => setCheckedIds(prev => {
-              const next = new Set(prev)
-              ids.forEach(id => checked ? next.add(id) : next.delete(id))
-              return next
-            })}
-          />
-          <Editor
-            prompt={selectedPrompt}
-            activeSentence={speech.activeSentence}
-            onUpdate={updatePrompt}
-            onPlayContent={content => {
-              const engine = config.speechEngine.engine
-              const prepared = getPlaybackContent(content, engine)
-              if (engine === 'amazon') playPolly(prepared)
-              else speech.play(prepared)
+            onToggleChecked={id => {
+              setCheckedIds(prev => {
+                const next = new Set(prev)
+                if (next.has(id)) {
+                  next.delete(id)
+                  setTabOrder(o => o.filter(x => x !== id))
+                } else {
+                  next.add(id)
+                  setTabOrder(o => o.includes(id) ? o : [...o, id])
+                }
+                return next
+              })
             }}
-            dark={dark}
-            ssml={config.ssml}
+            onToggleAll={(ids, checked) => {
+              setCheckedIds(prev => {
+                const next = new Set(prev)
+                ids.forEach(id => checked ? next.add(id) : next.delete(id))
+                return next
+              })
+              if (checked) {
+                setTabOrder(o => {
+                  const existing = new Set(o)
+                  return [...o, ...ids.filter(id => !existing.has(id))]
+                })
+              } else {
+                const removing = new Set(ids)
+                setTabOrder(o => o.filter(id => !removing.has(id)))
+              }
+            }}
           />
+          {/* Editor area with tabs for each checked prompt */}
+          <div className="flex flex-col flex-1 overflow-hidden">
+            {/* Tab bar — only shown when more than one prompt is checked */}
+            {checkedIds.size > 1 && (
+              <div className={`flex items-end gap-0 border-b overflow-x-auto shrink-0 ${dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
+                {tabOrder
+                  .filter(id => checkedIds.has(id))
+                  .map(id => {
+                    const p = prompts.find(x => x.id === id)
+                    if (!p) return null
+                    const isActive = p.id === selectedId
+                    return (
+                      <button
+                        key={p.id}
+                        draggable
+                        onDragStart={() => { dragTabRef.current = p.id }}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => {
+                          e.preventDefault()
+                          const from = dragTabRef.current
+                          if (!from || from === p.id) return
+                          setTabOrder(o => {
+                            const next = [...o]
+                            const fi = next.indexOf(from)
+                            const ti = next.indexOf(p.id)
+                            if (fi === -1 || ti === -1) return o
+                            next.splice(fi, 1)
+                            next.splice(ti, 0, from)
+                            return next
+                          })
+                          dragTabRef.current = null
+                        }}
+                        onClick={() => handleSelect(p.id)}
+                        title={`${p.title} — drag to reorder`}
+                        className={`relative flex items-center gap-2 px-4 py-2 text-xs font-medium whitespace-nowrap border-r transition-colors max-w-[180px] cursor-grab active:cursor-grabbing select-none ${
+                          dark ? 'border-gray-700' : 'border-gray-200'
+                        } ${
+                          isActive
+                            ? dark
+                              ? 'bg-gray-900 text-gray-100 border-b-2 border-b-indigo-500'
+                              : 'bg-white text-gray-900 border-b-2 border-b-indigo-600'
+                            : dark
+                              ? 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                              : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                        }`}
+                      >
+                        <span className="truncate">{p.title}</span>
+                        <span className={`shrink-0 text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                          v{(p.versions ?? []).length}
+                        </span>
+                      </button>
+                    )
+                  })}
+              </div>
+            )}
+            <Editor
+              prompt={selectedPrompt}
+              activeSentence={speech.activeSentence}
+              onUpdate={updatePrompt}
+              onPlayContent={content => {
+                const engine = config.speechEngine.engine
+                const prepared = getPlaybackContent(applyEditorVars(content), engine)
+                if (engine === 'amazon') playPolly(prepared)
+                else speech.play(prepared)
+              }}
+              onVarsChange={(values, skipped) => {
+                setEditorVarValues(values)
+                setEditorVarSkipped(skipped)
+              }}
+              dark={dark}
+              ssml={config.ssml}
+            />
+          </div>
           {pollyError && (
             <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 max-w-md w-full mx-4 px-4 py-3 rounded-lg shadow-lg text-sm z-50 ${dark ? 'bg-red-900 text-red-200' : 'bg-red-50 border border-red-200 text-red-700'}`}>
               <div className="flex items-start gap-2">
@@ -308,7 +468,7 @@ export default function App() {
             onPlay={() => {
               if (!selectedPrompt?.content) return
               const engine = config.speechEngine.engine
-              const content = getPlaybackContent(selectedPrompt.content, engine)
+              const content = getPlaybackContent(applyEditorVars(selectedPrompt.content), engine)
               if (engine === 'amazon') playPolly(content)
               else speech.play(content)
             }}
@@ -342,6 +502,11 @@ export default function App() {
             onGoToSettings={() => setTab('config')}
             onDownload={config.speechEngine.engine === 'amazon' ? downloadWav : undefined}
             downloadState={downloadState}
+            tabCount={tabOrder.filter(id => checkedIds.has(id)).length}
+            onPlayAll={playAll}
+            onStopAll={stopAll}
+            playAllState={playAllState}
+            playAllIndex={playAllIndex}
           />
         </div>
       ) : (

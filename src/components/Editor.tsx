@@ -7,6 +7,7 @@ interface Props {
   activeSentence: number
   onUpdate: (id: string, changes: { title?: string; content?: string }) => void
   onPlayContent: (content: string) => void
+  onVarsChange?: (values: Record<string, string>, skipped: Record<string, boolean>) => void
   dark: boolean
   ssml: SSMLConfig
 }
@@ -118,7 +119,7 @@ function applyTagToContent(
   }
 }
 
-export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent, dark, ssml }: Props) {
+export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent, onVarsChange, dark, ssml }: Props) {
   const [draftTitle, setDraftTitle] = useState('')
   const [draftContent, setDraftContent] = useState('')
   const [editingTitle, setEditingTitle] = useState(false)
@@ -127,6 +128,9 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
   const [enclosingMode, setEnclosingMode] = useState<'inside' | 'around'>('inside')
   const [showVersions, setShowVersions] = useState(false)
   const [expandedVersionIdx, setExpandedVersionIdx] = useState<number | null>(null)
+  const [varValues, setVarValues] = useState<Record<string, string>>({})
+  const [varSkipped, setVarSkipped] = useState<Record<string, boolean>>({})
+  const [varPanelOpen, setVarPanelOpen] = useState(true)
   const titleRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -137,7 +141,15 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
     setDraftContent(prompt?.content ?? '')
     setEditingTitle(false)
     setContextMenu(null)
+    setVarValues({})
+    setVarSkipped({})
+    setVarPanelOpen(true)
   }, [prompt?.id])
+
+  // Notify parent whenever variable assignments change
+  useEffect(() => {
+    onVarsChange?.(varValues, varSkipped)
+  }, [varValues, varSkipped]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (editingTitle) titleRef.current?.focus()
@@ -284,6 +296,20 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
   const charCount = draftContent.length
   const tokenCount = Math.ceil(charCount / 4)
 
+  // Extract unique $variable tokens from the content
+  const varNames: string[] = []
+  const varRegex = /\$([a-zA-Z_][a-zA-Z0-9_]*)/g
+  let varMatch: RegExpExecArray | null
+  while ((varMatch = varRegex.exec(draftContent)) !== null) {
+    if (!varNames.includes(varMatch[1])) varNames.push(varMatch[1])
+  }
+
+  /** Replace $var tokens with assigned values, unless the variable is skipped */
+  const applyVars = (content: string): string =>
+    content.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, name) =>
+      (!varSkipped[name] && varValues[name]) ? varValues[name] : match
+    )
+
   return (
     <div className={`flex-1 flex flex-col ${bg} overflow-hidden relative`}>
       {/* Title bar */}
@@ -367,6 +393,86 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
         </div>
       )}
 
+      {/* Variable values panel — shown when prompt contains $variable tokens */}
+      {varNames.length > 0 && (
+        <div className={`border-t shrink-0 ${borderCls}`}>
+          {/* Header */}
+          <button
+            onClick={() => setVarPanelOpen(o => !o)}
+            className={`w-full flex items-center justify-between px-4 py-2 text-xs font-medium transition-colors ${
+              dark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`font-semibold uppercase tracking-wide text-xs ${mutedCls}`}>Variables</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${dark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500'}`}>
+                {varNames.length}
+              </span>
+              {varNames.some(n => varValues[n] && !varSkipped[n]) && (
+                <span className={`text-xs ${dark ? 'text-green-400' : 'text-green-600'}`}>
+                  · {varNames.filter(n => varValues[n] && !varSkipped[n]).length}/{varNames.length} filled
+                </span>
+              )}
+            </div>
+            <span className={mutedCls}>{varPanelOpen ? '▼' : '▲'}</span>
+          </button>
+
+          {varPanelOpen && (
+            <div className={`px-4 pb-3 space-y-2`}>
+              <p className={`text-xs ${mutedCls} mb-2`}>
+                Assign values to <code className="font-mono">$variable</code> placeholders in your prompt.
+              </p>
+              <div className="space-y-2">
+                {varNames.map(name => {
+                  const skipped = !!varSkipped[name]
+                  return (
+                    <div key={name} className="flex items-center gap-2 min-w-0">
+                      {/* Skip toggle switch */}
+                      <button
+                        onClick={() => setVarSkipped(prev => ({ ...prev, [name]: !prev[name] }))}
+                        title={skipped ? 'Skipped — click to use value' : 'Active — click to skip'}
+                        className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                          skipped ? (dark ? 'bg-gray-600' : 'bg-gray-300') : 'bg-indigo-500'
+                        }`}
+                      >
+                        <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${skipped ? 'translate-x-0.5' : 'translate-x-3.5'}`} />
+                      </button>
+                      <label className={`text-xs font-mono shrink-0 font-medium ${skipped ? mutedCls : dark ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                        ${name}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="value…"
+                        disabled={skipped}
+                        value={varValues[name] ?? ''}
+                        onChange={e => setVarValues(prev => ({ ...prev, [name]: e.target.value }))}
+                        className={`flex-1 min-w-0 text-xs px-2 py-1 rounded border focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-opacity ${
+                          skipped ? 'opacity-40 cursor-not-allowed' : ''
+                        } ${
+                          dark
+                            ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-500'
+                            : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                        }`}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+              {varNames.some(n => varValues[n] && !varSkipped[n]) && (
+                <div className={`mt-2 pt-2 border-t ${borderCls}`}>
+                  <p className={`text-xs font-medium mb-1 ${mutedCls}`}>Preview with values:</p>
+                  <p className={`text-xs font-mono leading-relaxed break-words ${dark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {draftContent.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, n) =>
+                      (varValues[n] && !varSkipped[n]) ? `[${varValues[n]}]` : `$${n}`
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Version history panel */}
       {(prompt.versions ?? []).length > 0 && (
         <div className={`border-t ${borderCls}`}>
@@ -428,7 +534,7 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
                         </pre>
                         <div className="flex items-center gap-2 flex-wrap">
                           <button
-                            onClick={() => onPlayContent(v.content)}
+                            onClick={() => onPlayContent(applyVars(v.content))}
                             className={`text-xs px-3 py-1.5 rounded font-medium transition-colors ${
                               dark
                                 ? 'bg-indigo-700 hover:bg-indigo-600 text-white'
