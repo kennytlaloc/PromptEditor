@@ -25,6 +25,13 @@ export interface SSMLConfig {
   favourites: string[]   // tag IDs (built-in or custom) starred by the user
 }
 
+export interface PromptVariable {
+  id: string
+  name: string         // without the $ prefix
+  description: string  // shown as placeholder/tooltip in the editor panel
+  defaultValue: string // pre-filled value in the editor panel
+}
+
 export interface AppConfig {
   defaultVoice: string
   defaultRate: number
@@ -33,6 +40,7 @@ export interface AppConfig {
   autoSaveDelay: number
   speechEngine: SpeechEngineConfig
   ssml: SSMLConfig
+  variables: PromptVariable[]
 }
 
 const A = ALL_POLLY_ENGINES
@@ -141,4 +149,5 @@ export const DEFAULT_CONFIG: AppConfig = {
     snippets: [],
     favourites: [],
   },
+  variables: [],
 }

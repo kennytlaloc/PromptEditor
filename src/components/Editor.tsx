@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Prompt, PromptVersion } from '../types'
-import { SSMLConfig, BUILT_IN_SSML_TAGS, SSMLSnippet } from '../config'
+import { SSMLConfig, BUILT_IN_SSML_TAGS, SSMLSnippet, PromptVariable } from '../config'
 
 interface Props {
   prompt: Prompt | null
@@ -10,6 +10,7 @@ interface Props {
   onVarsChange?: (values: Record<string, string>, skipped: Record<string, boolean>) => void
   dark: boolean
   ssml: SSMLConfig
+  definedVariables?: PromptVariable[]
 }
 
 interface EnclosingTag {
@@ -119,7 +120,7 @@ function applyTagToContent(
   }
 }
 
-export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent, onVarsChange, dark, ssml }: Props) {
+export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent, onVarsChange, dark, ssml, definedVariables = [] }: Props) {
   const [draftTitle, setDraftTitle] = useState('')
   const [draftContent, setDraftContent] = useState('')
   const [editingTitle, setEditingTitle] = useState(false)
@@ -141,10 +142,15 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
     setDraftContent(prompt?.content ?? '')
     setEditingTitle(false)
     setContextMenu(null)
-    setVarValues({})
+    // Seed from defined variable default values
+    const seeds: Record<string, string> = {}
+    for (const dv of definedVariables) {
+      if (dv.defaultValue) seeds[dv.name] = dv.defaultValue
+    }
+    setVarValues(seeds)
     setVarSkipped({})
     setVarPanelOpen(true)
-  }, [prompt?.id])
+  }, [prompt?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Notify parent whenever variable assignments change
   useEffect(() => {
@@ -463,7 +469,7 @@ export default function Editor({ prompt, activeSentence, onUpdate, onPlayContent
                       </label>
                       <input
                         type="text"
-                        placeholder="value…"
+                        placeholder={definedVariables.find(dv => dv.name === name)?.description || 'value…'}
                         disabled={skipped}
                         value={varValues[name] ?? ''}
                         onChange={e => setVarValues(prev => ({ ...prev, [name]: e.target.value }))}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { AppConfig, SpeechEngineConfig, SSMLConfig, EngineId } from '../config'
+import { AppConfig, SpeechEngineConfig, SSMLConfig, EngineId, PromptVariable } from '../config'
 import {
   POLLY_REGIONS, POLLY_VOICES, POLLY_LANGUAGES, POLLY_ENGINE_TYPES,
   getVoicesFiltered, getEngineForVoice, PollyEngine,
@@ -702,6 +702,13 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
           dark={dark}
         />
 
+        {/* Prompt Variables */}
+        <VariablesSection
+          variables={config.variables ?? []}
+          onChange={vars => onChange({ variables: vars })}
+          dark={dark}
+        />
+
         {/* About */}
         <Section title="About">
           <Row label="PromptEditor" hint="Version 1.0.1">
@@ -724,6 +731,225 @@ export default function ConfigPanel({ config, voices, onChange, dark }: Props) {
           </Row>
         </Section>
       </div>
+    </div>
+  )
+}
+
+// ─── Prompt Variables Section ────────────────────────────────────────────────
+
+function makeVarId() {
+  return `var-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+function VariablesSection({
+  variables,
+  onChange,
+  dark,
+}: {
+  variables: PromptVariable[]
+  onChange: (vars: PromptVariable[]) => void
+  dark: boolean
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<Omit<PromptVariable, 'id'>>({ name: '', description: '', defaultValue: '' })
+  const [addingNew, setAddingNew] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
+
+  const cardBg = dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+  const mutedCls = dark ? 'text-gray-400' : 'text-gray-500'
+  const inputCls = dark
+    ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-500'
+    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+  const rowBg = dark ? 'border-gray-700 bg-gray-700/40' : 'border-gray-200 bg-gray-50'
+
+  const validateName = (name: string, excludeId?: string): string | null => {
+    if (!name.trim()) return 'Name is required'
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name.trim())) return 'Use letters, numbers and underscores only (cannot start with a number)'
+    if (variables.some(v => v.name === name.trim() && v.id !== excludeId)) return 'A variable with this name already exists'
+    return null
+  }
+
+  const openAdd = () => {
+    setDraft({ name: '', description: '', defaultValue: '' })
+    setNameError(null)
+    setAddingNew(true)
+    setEditingId(null)
+  }
+
+  const openEdit = (v: PromptVariable) => {
+    setDraft({ name: v.name, description: v.description, defaultValue: v.defaultValue })
+    setNameError(null)
+    setEditingId(v.id)
+    setAddingNew(false)
+  }
+
+  const cancelForm = () => {
+    setAddingNew(false)
+    setEditingId(null)
+    setNameError(null)
+  }
+
+  const saveNew = () => {
+    const err = validateName(draft.name)
+    if (err) { setNameError(err); return }
+    onChange([...variables, { id: makeVarId(), name: draft.name.trim(), description: draft.description.trim(), defaultValue: draft.defaultValue.trim() }])
+    setAddingNew(false)
+    setDraft({ name: '', description: '', defaultValue: '' })
+  }
+
+  const saveEdit = (id: string) => {
+    const err = validateName(draft.name, id)
+    if (err) { setNameError(err); return }
+    onChange(variables.map(v => v.id === id ? { ...v, name: draft.name.trim(), description: draft.description.trim(), defaultValue: draft.defaultValue.trim() } : v))
+    setEditingId(null)
+  }
+
+  const deleteVar = (id: string) => {
+    onChange(variables.filter(v => v.id !== id))
+    if (editingId === id) setEditingId(null)
+  }
+
+  const InlineForm = ({ onSave, onCancel, id }: { onSave: () => void; onCancel: () => void; id?: string }) => (
+    <div className={`rounded-lg border p-3 space-y-2.5 ${dark ? 'bg-gray-700 border-gray-600' : 'bg-indigo-50 border-indigo-200'}`}>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${mutedCls}`}>Name <span className="text-red-500">*</span></label>
+          <div className="relative">
+            <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold select-none ${dark ? 'text-indigo-400' : 'text-indigo-500'}`}>$</span>
+            <input
+              autoFocus
+              type="text"
+              placeholder="variableName"
+              value={draft.name}
+              onChange={e => { setDraft(d => ({ ...d, name: e.target.value })); setNameError(null) }}
+              onKeyDown={e => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel() }}
+              className={`w-full text-xs pl-5 pr-2 py-1.5 rounded border focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono ${inputCls} ${nameError ? '!border-red-400' : ''}`}
+            />
+          </div>
+          {nameError && <p className="text-xs text-red-500 mt-0.5">{nameError}</p>}
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${mutedCls}`}>Default value</label>
+          <input
+            type="text"
+            placeholder="optional pre-filled value"
+            value={draft.defaultValue}
+            onChange={e => setDraft(d => ({ ...d, defaultValue: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel() }}
+            className={`w-full text-xs px-2 py-1.5 rounded border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${inputCls}`}
+          />
+        </div>
+      </div>
+      <div>
+        <label className={`block text-xs font-medium mb-1 ${mutedCls}`}>
+          Description <span className={mutedCls}>(shown as placeholder in the editor)</span>
+        </label>
+        <input
+          type="text"
+          placeholder="e.g. Customer's policy number"
+          value={draft.description}
+          onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
+          onKeyDown={e => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel() }}
+          className={`w-full text-xs px-2 py-1.5 rounded border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${inputCls}`}
+        />
+      </div>
+      <div className="flex gap-2 justify-end pt-1">
+        <button
+          onClick={onCancel}
+          className={`text-xs px-3 py-1.5 rounded border transition-colors ${dark ? 'border-gray-500 text-gray-300 hover:bg-gray-600' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onSave}
+          className="text-xs px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors"
+        >
+          {id ? 'Save' : 'Add variable'}
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className={`rounded-lg border p-5 space-y-4 ${cardBg}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className={`text-sm font-semibold uppercase tracking-wide ${mutedCls}`}>Prompt Variables</h3>
+          <p className={`text-xs mt-0.5 ${mutedCls}`}>
+            Define <code className="font-mono">$variables</code> used in prompts — set descriptions and default values.
+          </p>
+        </div>
+        {!addingNew && (
+          <button
+            onClick={openAdd}
+            className={`text-xs px-3 py-1.5 rounded border font-medium transition-colors shrink-0 ${
+              dark ? 'border-indigo-500 text-indigo-300 hover:bg-indigo-900' : 'border-indigo-400 text-indigo-600 hover:bg-indigo-50'
+            }`}
+          >
+            + Add variable
+          </button>
+        )}
+      </div>
+
+      {/* Empty state */}
+      {variables.length === 0 && !addingNew && (
+        <p className={`text-xs ${mutedCls}`}>
+          No variables defined yet. Add one to set descriptions and defaults that appear in the editor's Variables panel.
+        </p>
+      )}
+
+      {/* Variable rows */}
+      {variables.length > 0 && (
+        <div className="space-y-2">
+          {variables.map(v => (
+            <div key={v.id}>
+              {editingId === v.id ? (
+                <InlineForm onSave={() => saveEdit(v.id)} onCancel={cancelForm} id={v.id} />
+              ) : (
+                <div className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border ${rowBg}`}>
+                  <code className={`text-sm font-mono font-semibold shrink-0 ${dark ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                    ${v.name}
+                  </code>
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    {v.description ? (
+                      <p className={`text-xs truncate ${mutedCls}`}>{v.description}</p>
+                    ) : null}
+                    {v.defaultValue ? (
+                      <p className={`text-xs ${mutedCls}`}>
+                        Default: <span className={`font-mono ${dark ? 'text-gray-300' : 'text-gray-700'}`}>{v.defaultValue}</span>
+                      </p>
+                    ) : null}
+                    {!v.description && !v.defaultValue && (
+                      <p className={`text-xs italic ${mutedCls}`}>No description or default value</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => openEdit(v)}
+                      className={`text-xs px-2 py-1 rounded transition-colors ${dark ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'}`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteVar(v.id)}
+                      className={`text-xs px-2 py-1 rounded transition-colors ${dark ? 'text-gray-500 hover:text-red-400 hover:bg-gray-600' : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'}`}
+                      title="Delete variable"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add new variable form */}
+      {addingNew && (
+        <InlineForm onSave={saveNew} onCancel={cancelForm} />
+      )}
     </div>
   )
 }

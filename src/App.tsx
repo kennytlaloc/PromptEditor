@@ -27,6 +27,7 @@ function loadConfig(): AppConfig {
         elevenlabs: { ...DEFAULT_CONFIG.speechEngine.elevenlabs, ...(saved.speechEngine?.elevenlabs ?? {}) },
       },
       ssml: { ...DEFAULT_CONFIG.ssml, ...(saved.ssml ?? {}), favourites: saved.ssml?.favourites ?? [] },
+      variables: saved.variables ?? DEFAULT_CONFIG.variables,
     }
   } catch {
     return DEFAULT_CONFIG
@@ -450,6 +451,7 @@ export default function App() {
               }}
               dark={dark}
               ssml={config.ssml}
+              definedVariables={config.variables}
             />
           </div>
           {pollyError && (
