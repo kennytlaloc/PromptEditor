@@ -53,17 +53,10 @@ function parseCSV(raw: string): ParsedPrompt[] | null {
 
   const headers = parseCSVRow(lines[0]).map(h => h.trim().toLowerCase())
 
-  // Prefer exact matches first, then partial — ensures "Prompt Name" and "Prompt Text"
-  // don't both resolve to index 0 via the shared word "prompt".
-  const nameIdx = headers.findIndex(h => h === 'prompt name' || h === 'name' || h === 'title')
-    !== -1
-    ? headers.findIndex(h => h === 'prompt name' || h === 'name' || h === 'title')
-    : headers.findIndex(h => h.includes('name') || h.includes('title'))
-
-  const textIdx = headers.findIndex(h => h === 'prompt text' || h === 'text' || h === 'content')
-    !== -1
-    ? headers.findIndex(h => h === 'prompt text' || h === 'text' || h === 'content')
-    : headers.findIndex(h => h.includes('text') || h.includes('content'))
+  // Accept "Prompt Name", "Name" for the title column
+  const nameIdx = headers.findIndex(h => h === 'prompt name' || h === 'name')
+  // Accept "Prompt Text", "Text", or "Value" for the content column
+  const textIdx = headers.findIndex(h => h === 'prompt text' || h === 'text' || h === 'value')
 
   if (nameIdx === -1 || textIdx === -1 || nameIdx === textIdx) return null
 
@@ -257,7 +250,8 @@ export default function ImportModal({ onImport, onClose, dark }: Props) {
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
           <p className={`text-xs ${mutedCls}`}>
-            CSV format: <code className="font-mono">Prompt Name, Prompt Text</code>
+            CSV columns: <code className="font-mono">Prompt Name</code> / <code className="font-mono">Name</code>,{' '}
+            <code className="font-mono">Prompt Text</code> / <code className="font-mono">Text</code> / <code className="font-mono">Value</code>
           </p>
           <div className="flex gap-2">
             <button
