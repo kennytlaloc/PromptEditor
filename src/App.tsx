@@ -9,6 +9,7 @@ import Editor from './components/Editor'
 import PlaybackPanel from './components/PlaybackPanel'
 import ImportModal, { ParsedPrompt } from './components/ImportModal'
 import ConfigPanel from './components/ConfigPanel'
+import ComparatorPanel from './components/ComparatorPanel'
 
 const CONFIG_KEY = 'prompt-editor-config'
 
@@ -35,7 +36,7 @@ function loadConfig(): AppConfig {
   }
 }
 
-type Tab = 'editor' | 'config'
+type Tab = 'editor' | 'config' | 'comparator'
 
 export default function App() {
   const { prompts, addPrompt, updatePrompt, deletePrompt } = usePrompts()
@@ -300,6 +301,7 @@ export default function App() {
         </h1>
         <nav className="flex items-end gap-1 h-full">
           {navTab('editor', 'Editor')}
+          {navTab('comparator', 'Comparator')}
           {navTab('config', 'Configuration')}
         </nav>
         <div className="flex items-center gap-2 ml-auto py-2">
@@ -353,7 +355,10 @@ export default function App() {
         </div>
       </header>
 
-      {tab === 'editor' ? (
+      {tab === 'comparator' && (
+        <ComparatorPanel prompts={prompts} config={config} dark={dark} />
+      )}
+      {tab !== 'comparator' && tab === 'editor' ? (
         <div className="flex flex-1 overflow-hidden relative">
           <Sidebar
             prompts={prompts} selectedId={selectedId}
@@ -521,9 +526,9 @@ export default function App() {
             playAllIndex={playAllIndex}
           />
         </div>
-      ) : (
+      ) : tab === 'config' ? (
         <ConfigPanel config={config} voices={speech.voices} onChange={handleConfigChange} dark={dark} />
-      )}
+      ) : null}
 
       {showImport && (
         <ImportModal onImport={handleImport} onClose={() => setShowImport(false)} dark={dark} />
