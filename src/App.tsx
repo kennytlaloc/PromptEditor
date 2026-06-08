@@ -147,7 +147,9 @@ export default function App() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${selectedPrompt.title.replace(/[^a-z0-9_-]/gi, '_') || 'prompt'}.wav`
+      const slug = (s: string) => s.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()
+      const { language, engineType } = config.speechEngine.amazon
+      a.download = `${slug(language)}-${slug(engineType)}-${slug(voiceId)}-${slug(selectedPrompt.title) || 'prompt'}.wav`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err: any) {
