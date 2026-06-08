@@ -149,7 +149,7 @@ export default function App() {
       a.href = url
       const slug = (s: string) => s.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()
       const { language, engineType } = config.speechEngine.amazon
-      a.download = `${slug(language)}-${slug(engineType)}-${slug(voiceId)}-${slug(selectedPrompt.title) || 'prompt'}.wav`
+      a.download = `${slug(language)}-${slug(engineType)}-${slug(voiceId)}---${slug(selectedPrompt.title) || 'prompt'}.wav`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err: any) {
